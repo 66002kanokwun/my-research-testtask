@@ -1,0 +1,45 @@
+id: todo-api
+name: Todo REST API
+# prompt ที่ส่งให้ AI (ส่วนของ "โปรเจกต์ที่อยากให้สร้าง")
+prompt: |
+  Build a small REST API for a todo list.
+  Endpoints: POST /todos, GET /todos, GET /todos/{id}, PUT /todos/{id}, DELETE /todos/{id}.
+  Each todo has id, title, done (bool), created_at.
+  Use in-memory storage behind a repository class.
+  Include input validation and proper HTTP error codes.
+  Include pytest tests that cover the main endpoints.
+
+# environment ที่กำหนดให้ AI ต้องทำตาม
+environment:
+  language: python
+  version: "3.12"
+  frameworks: [fastapi, pytest, httpx]
+  constraints:
+    - Put application code in app/ and tests in tests/
+    - Include requirements.txt
+    - No external database
+    - Follow PEP8 and add type hints
+  docker_image: python:3.12-slim
+  # (optional) รัน test + coverage ใน docker ก่อนสแกน เพื่อให้ได้ coverage
+  test_command: "pip install -q -r requirements.txt pytest-cov && pytest --cov=app --cov-report=xml:coverage.xml"
+
+sonar:
+  properties:
+    sonar.python.version: "3.12"
+    sonar.exclusions: "**/__pycache__/**"
+    sonar.tests: tests
+    sonar.python.coverage.reportPaths: coverage.xml
+
+# metrics ที่จะดึงจาก SonarQube
+metrics:
+  - bugs
+  - vulnerabilities
+  - code_smells
+  - security_hotspots
+  - coverage
+  - duplicated_lines_density
+  - ncloc
+  - sqale_index
+  - reliability_rating
+  - security_rating
+  - sqale_rating

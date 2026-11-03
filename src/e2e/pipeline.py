@@ -1,0 +1,57 @@
+"""ร้อย flow ทั้งหมดเข้าด้วยกัน: generate -> write -> test -> sonar -> store"""
+from __future__ import annotations
+
+import traceback
+
+from . import sandbox, sonar, storage
+from .config import get_settings
+from .generator import get_generator
+from .models import Task
+
+
+def run_pipeline(task_path: str, provider: str | None = None, model: str | None = None, run_id: int | None = None) -> int:
+    s = get_settings()
+    task = Task.load(task_path)
+    provider = provider or s.ai_provider
+    model = model or s.ai_model
+    if run_id is None:
+        run_id = storage.create_run(task.id, task.name, provider, model)
+
+    try:
+        storage.update_run(run_id, step="generating")
+        gen = get_generator(provider, s, model).generate(task)
+        storage.update_run(
+            run_id, gen_seconds=gen.seconds, input_tokens=gen.input_tokens, output_tokens=gen.output_tokens, model=gen.model
+        )
+
+        storage.update_run(run_id, step="writing workspace")
+        ws = sandbox.write_workspace(s.workspaces_dir / f"{task.id}-{run_id}", gen.files)
+
+        env = task.environment
+        if env.get("test_command") and env.get("docker_image"):
+            storage.update_run(run_id, step="running tests")
+            res = sandbox.run_tests_in_docker(ws, env["docker_image"], env["test_command"])
+            storage.update_run(run_id, tests_passed=int(res["passed"]))
+
+        storage.update_run(run_id, step="sonar scan")
+        key = sonar.project_key(task.id, gen.model)
+        sonar.run_scanner(ws, key, s, task.sonar.get("properties", {}), version=str(run_id))
+        sonar.wait_for_analysis(ws, s)
+
+        storage.update_run(run_id, step="collecting metrics")
+        metrics = sonar.fetch_measures(key, task.metrics, s)
+        gate = sonar.fetch_quality_gate(key, s)
+        storage.update_run(
+            run_id,
+            metrics=metrics,
+            quality_gate=gate,
+            sonar_url=f"{s.sonar_host_url}/dashboard?id={key}",
+            status="done",
+            step="finished",
+            finished_at=storage.now(),
+        )
+    except Exception as e:  # noqa: BLE001
+        storage.update_run(
+            run_id, status="failed", error=f"{e}\n{traceback.format_exc()[-1500:]}", finished_at=storage.now()
+        )
+    return run_id

@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run task (mock)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "e2e.cli",
+      "args": ["run", "tasks/todo-api.yaml", "--provider", "mock"],
+      "env": { "PYTHONPATH": "${workspaceFolder}/src" },
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Dashboard API",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["e2e.api:app", "--reload", "--port", "8000"],
+      "env": { "PYTHONPATH": "${workspaceFolder}/src" },
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}
