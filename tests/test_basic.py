@@ -7,7 +7,8 @@ from e2e.sonar import project_key
 
 def test_task_loads():
     t = Task.load("tasks/todo-api.yaml")
-    assert t.id == "todo-api" and "bugs" in t.metrics
+    assert t.id == "todo-react"
+    assert "bugs" in t.metrics
 
 
 def test_safe_join_blocks_traversal(tmp_path):

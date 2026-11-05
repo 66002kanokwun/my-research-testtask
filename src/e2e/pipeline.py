@@ -1,4 +1,4 @@
-"""ร้อย flow ทั้งหมดเข้าด้วยกัน: generate -> write -> test -> sonar -> store"""
+"""ร้อย flow ทั้งหมดเข้าด้วยกัน: generate -> write -> checks -> sonar -> store"""
 from __future__ import annotations
 
 import traceback
@@ -27,11 +27,18 @@ def run_pipeline(task_path: str, provider: str | None = None, model: str | None 
         storage.update_run(run_id, step="writing workspace")
         ws = sandbox.write_workspace(s.workspaces_dir / f"{task.id}-{run_id}", gen.files)
 
-        env = task.environment
-        if env.get("test_command") and env.get("docker_image"):
-            storage.update_run(run_id, step="running tests")
-            res = sandbox.run_tests_in_docker(ws, env["docker_image"], env["test_command"])
-            storage.update_run(run_id, tests_passed=int(res["passed"]))
+        # ใส่เทสต์ของเราหลังเขียน workspace เสมอ เพื่อไม่ให้ AI เขียนทับ/เห็นล่วงหน้า
+        sandbox.inject_acceptance_tests(ws, task.acceptance_tests)
+        if task.checks and task.environment.get("docker_image"):
+            storage.update_run(run_id, step="running checks")
+            results = sandbox.run_checks_in_docker(ws, task.environment["docker_image"], task.checks)
+            # ด่านที่มี always เป็นการวิเคราะห์ ไม่นับเป็นเงื่อนไขผ่าน/ไม่ผ่านของโปรเจกต์
+            gate_names = {c["name"] for c in task.checks if not c.get("always")}
+            storage.update_run(
+                run_id,
+                checks=results,
+                tests_passed=int(all(r["status"] == "pass" for r in results if r["name"] in gate_names)),
+            )
 
         storage.update_run(run_id, step="sonar scan")
         key = sonar.project_key(task.id, gen.model)
@@ -40,6 +47,9 @@ def run_pipeline(task_path: str, provider: str | None = None, model: str | None 
 
         storage.update_run(run_id, step="collecting metrics")
         metrics = sonar.fetch_measures(key, task.metrics, s)
+        if task.checks:
+            metrics.update(sandbox.collect_functional_metrics(ws))
+            metrics.update(sandbox.collect_design_metrics(ws))
         gate = sonar.fetch_quality_gate(key, s)
         storage.update_run(
             run_id,

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Code Quality Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" integrity="sha512-ZwR1/gSZM3ai6vCdI+LVF1zSq/5HznD3ZSTk7kajkaj4D292NLuduDCO1c/NT8Id+jE58KYLKT7hXnbtryGmMg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
   :root { --bg:#f7f7f5; --card:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e4e4df; --ok:#1d9e75; --bad:#d85a30; --warn:#ba7517; --accent:#378add; }
   @media (prefers-color-scheme: dark) { :root { --bg:#161614; --card:#1f1f1c; --text:#ecece8; --muted:#9a9a93; --line:#33332f; } }
@@ -23,16 +23,17 @@
   .wrap { overflow-x:auto; }
   .pill { padding:2px 8px; border-radius:99px; font-size:12px; color:#fff; }
   .OK,.done { background:var(--ok); } .ERROR,.failed { background:var(--bad); } .running,.NONE { background:var(--warn); }
+  .pass { background:var(--ok); } .fail { background:var(--bad); } .skipped { background:var(--muted); }
   a { color:var(--accent); }
 </style>
 </head>
 <body>
 <h1>AI Code Quality Dashboard</h1>
 <div class="bar">
-  <select id="task"></select>
-  <select id="provider"><option value="">default provider</option><option>anthropic</option><option>mock</option></select>
-  <button onclick="startRun()">Run task</button>
-  <button onclick="load()" style="background:var(--muted)">Refresh</button>
+  <select id="task" aria-label="Task"></select>
+  <select id="provider" aria-label="AI provider"><option value="">default provider</option><option>deepseek</option><option>mock</option></select>
+  <button id="run" type="button">Run task</button>
+  <button id="refresh" type="button" style="background:var(--muted)">Refresh</button>
 </div>
 <div class="cards" id="cards"></div>
 <div class="grid2">
@@ -41,34 +42,51 @@
 </div>
 <div class="card wrap">
   <table>
-    <thead><tr><th>#</th><th>Task</th><th>Model</th><th>Status</th><th>Gate</th><th>Bugs</th><th>Vuln</th><th>Smells</th><th>Cov %</th><th>Dup %</th><th>LOC</th><th>Debt (min)</th><th>Rel/Sec/Maint</th><th>Gen (s)</th><th>Sonar</th></tr></thead>
+    <thead><tr><th>#</th><th>Task</th><th>Model</th><th>Status</th><th>Gate</th><th>Checks</th><th>Bugs</th><th>Vuln</th><th>Smells</th><th>Cov %</th><th>Dup %</th><th>LOC</th><th>Debt (min)</th><th>Func %</th><th>Modules</th><th>Cycles</th><th>Orphans</th><th>Instab.</th><th>Rel/Sec/Maint</th><th>Gen (s)</th><th>Sonar</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
 </div>
-<script>
-let charts = {};
+<script type="module">
+const charts = {};
 const n = v => (v === null || v === undefined || v === "") ? "-" : v;
+const pill = (cls, text, title = "") => `<span class="pill ${cls}" title="${title}">${text}</span>`;
+const link = url => url ? `<a href="${url}" target="_blank" rel="noopener">open</a>` : "-";
+const pct = v => (v === null || v === undefined) ? "-" : Math.round(v * 100) + "%";
+
+function renderRow(r) {
+  const m = r.metrics || {};
+  const statusTitle = (r.error || r.step || "").replaceAll('"', "'");
+  const gate = r.quality_gate ? pill(r.quality_gate, r.quality_gate) : "-";
+  const checks = (r.checks || []).map(c => pill(c.status, c.name, `${c.name}: ${c.status}`)).join(" ") || "-";
+  const ratings = [m.reliability_rating, m.security_rating, m.sqale_rating].map(n).join("/");
+  const instability = (m.dep_avg_instability === null || m.dep_avg_instability === undefined) ? "-" : m.dep_avg_instability.toFixed(2);
+  const genSeconds = r.gen_seconds ? r.gen_seconds.toFixed(1) : "-";
+  return `<tr><td>${r.id}</td><td>${r.task_name}</td><td>${r.model}</td>
+    <td>${pill(r.status, r.status, statusTitle)}</td><td>${gate}</td><td>${checks}</td>
+    <td>${n(m.bugs)}</td><td>${n(m.vulnerabilities)}</td><td>${n(m.code_smells)}</td><td>${n(m.coverage)}</td>
+    <td>${n(m.duplicated_lines_density)}</td><td>${n(m.ncloc)}</td><td>${n(m.sqale_index)}</td>
+    <td>${pct(m.func_pass_rate)}</td><td>${n(m.dep_modules)}</td><td>${n(m.dep_cycles)}</td><td>${n(m.dep_orphans)}</td>
+    <td>${instability}</td><td>${ratings}</td><td>${genSeconds}</td><td>${link(r.sonar_url)}</td></tr>`;
+}
+
+function draw(id, type, labels, datasets, title) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), { type, data: { labels, datasets },
+    options: { plugins: { title: { display: true, text: title } }, responsive: true } });
+}
+
 async function load() {
   const runs = await (await fetch("/api/runs")).json();
   const done = runs.filter(r => r.status === "done");
   const avg = k => done.length ? (done.reduce((a, r) => a + Number(r.metrics[k] || 0), 0) / done.length).toFixed(1) : "-";
-  const passRate = done.length ? Math.round(100 * done.filter(r => r.quality_gate === "OK").length / done.length) + "%" : "-";
+  const rate = fn => done.length ? Math.round(100 * done.filter(fn).length / done.length) + "%" : "-";
   document.getElementById("cards").innerHTML = [
-    ["Total runs", runs.length], ["Gate pass rate", passRate], ["Avg bugs", avg("bugs")],
-    ["Avg vulnerabilities", avg("vulnerabilities")], ["Avg code smells", avg("code_smells")], ["Avg coverage %", avg("coverage")]
+    ["Total runs", runs.length], ["Gate pass rate", rate(r => r.quality_gate === "OK")], ["Avg bugs", avg("bugs")],
+    ["Avg vulnerabilities", avg("vulnerabilities")], ["Avg code smells", avg("code_smells")], ["Avg coverage %", avg("coverage")],
+    ["All checks pass", rate(r => r.tests_passed === 1)]
   ].map(([l, v]) => `<div class="card"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
 
-  document.getElementById("rows").innerHTML = runs.map(r => {
-    const m = r.metrics || {};
-    return `<tr><td>${r.id}</td><td>${r.task_name}</td><td>${r.model}</td>
-      <td><span class="pill ${r.status}" title="${(r.error || r.step || "").replace(/"/g, "'")}">${r.status}</span></td>
-      <td>${r.quality_gate ? `<span class="pill ${r.quality_gate}">${r.quality_gate}</span>` : "-"}</td>
-      <td>${n(m.bugs)}</td><td>${n(m.vulnerabilities)}</td><td>${n(m.code_smells)}</td><td>${n(m.coverage)}</td>
-      <td>${n(m.duplicated_lines_density)}</td><td>${n(m.ncloc)}</td><td>${n(m.sqale_index)}</td>
-      <td>${n(m.reliability_rating)}/${n(m.security_rating)}/${n(m.sqale_rating)}</td>
-      <td>${r.gen_seconds ? r.gen_seconds.toFixed(1) : "-"}</td>
-      <td>${r.sonar_url ? `<a href="${r.sonar_url}" target="_blank">open</a>` : "-"}</td></tr>`;
-  }).join("");
+  document.getElementById("rows").innerHTML = runs.map(renderRow).join("");
 
   const ordered = [...done].reverse();
   const labels = ordered.map(r => `#${r.id} ${r.model}`);
@@ -82,22 +100,22 @@ async function load() {
     { label: "Duplication %", data: ordered.map(r => +r.metrics.duplicated_lines_density || 0), borderColor: "#7f77dd" },
   ], "Coverage & duplication");
 }
-function draw(id, type, labels, datasets, title) {
-  if (charts[id]) charts[id].destroy();
-  charts[id] = new Chart(document.getElementById(id), { type, data: { labels, datasets },
-    options: { plugins: { title: { display: true, text: title } }, responsive: true } });
-}
+
 async function startRun() {
   const body = { task_file: document.getElementById("task").value };
-  const p = document.getElementById("provider").value; if (p) body.provider = p;
+  const p = document.getElementById("provider").value;
+  if (p) body.provider = p;
   await fetch("/api/runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  load();
+  await load();
 }
-(async () => {
-  const tasks = await (await fetch("/api/tasks")).json();
-  document.getElementById("task").innerHTML = tasks.map(t => `<option value="${t.file}">${t.name}</option>`).join("");
-  load(); setInterval(load, 5000);
-})();
+
+document.getElementById("run").addEventListener("click", startRun);
+document.getElementById("refresh").addEventListener("click", load);
+
+const tasks = await (await fetch("/api/tasks")).json();
+document.getElementById("task").innerHTML = tasks.map(t => `<option value="${t.file}">${t.name}</option>`).join("");
+await load();
+setInterval(load, 5000);
 </script>
 </body>
 </html>

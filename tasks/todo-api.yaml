@@ -1,36 +1,56 @@
-id: todo-api
-name: Todo REST API
-# prompt ที่ส่งให้ AI (ส่วนของ "โปรเจกต์ที่อยากให้สร้าง")
+id: todo-react
+name: Todo App (React)
 prompt: |
-  Build a small REST API for a todo list.
-  Endpoints: POST /todos, GET /todos, GET /todos/{id}, PUT /todos/{id}, DELETE /todos/{id}.
-  Each todo has id, title, done (bool), created_at.
-  Use in-memory storage behind a repository class.
-  Include input validation and proper HTTP error codes.
-  Include pytest tests that cover the main endpoints.
+  Build a small todo list web app with React (frontend only, in-memory state, nothing persisted).
+  Features:
+  - Add a todo from a text input. Empty or whitespace-only input must show an error message
+    and must not add anything. After a successful add the input is cleared.
+  - Toggle a todo done / not done with a checkbox.
+  - Edit a todo title: clicking edit shows an input pre-filled with the current title and a save button;
+    saving updates the title.
+  - Delete a todo.
+  - Filter the list: all / active / done.
+  - Show the number of remaining (not done) todos.
+  Split the UI into small components (TodoForm, TodoList, TodoItem, FilterBar).
+  Use hooks (useState, useMemo).
+  src/App.jsx must default-export the root component.
+  Required data-testid attributes (the app is graded by automated tests that use them):
+  - todo-input: the text input for a new todo
+  - add-button: the button that adds the todo
+  - error-message: rendered ONLY while there is an error
+  - todo-item: root element of each todo (one per todo)
+  - todo-title: element showing the title of a todo (not rendered while that todo is being edited)
+  - todo-toggle: the checkbox (input type="checkbox") inside each todo-item
+  - todo-edit: button that starts editing a todo
+  - todo-edit-input: the input shown while editing, pre-filled with the current title
+  - todo-save: button that saves the edit
+  - todo-delete: button that deletes a todo
+  - filter-all, filter-active, filter-done: the three filter buttons
+  - remaining-count: element whose text contains the number of not-done todos
+  Also write your own tests, and make sure npm install, npm run build and the tests all pass.
 
-# environment ที่กำหนดให้ AI ต้องทำตาม
 environment:
-  language: python
-  version: "3.12"
-  frameworks: [fastapi, pytest, httpx]
+  language: javascript
+  version: "ES2022"
+  frameworks: [react 18, vite, vitest, "@testing-library/react", "@testing-library/user-event", jsdom]
   constraints:
-    - Put application code in app/ and tests in tests/
-    - Include requirements.txt
-    - No external database
-    - Follow PEP8 and add type hints
-  docker_image: python:3.12-slim
-  # (optional) รัน test + coverage ใน docker ก่อนสแกน เพื่อให้ได้ coverage
-  test_command: "pip install -q -r requirements.txt pytest-cov && pytest --cov=app --cov-report=xml:coverage.xml"
+    - JavaScript with JSX only, no TypeScript
+    - Put source in src/ and your own tests next to code as *.test.jsx
+    - package.json must define scripts dev, build and test, and npm install must work without extra flags
+    - devDependencies must include vite, "@vitejs/plugin-react", vitest, "@vitest/coverage-v8", jsdom, "@testing-library/react", "@testing-library/user-event"
+    - Configure vitest inside vite.config.js with environment jsdom, globals true, and coverage provider v8 with reporters lcov and text
+    - Functional components and hooks only, no class components
+    - No external UI libraries and no backend
+  docker_image: node:20-slim
 
 sonar:
   properties:
-    sonar.python.version: "3.12"
-    sonar.exclusions: "**/__pycache__/**"
-    sonar.tests: tests
-    sonar.python.coverage.reportPaths: coverage.xml
+    sonar.sources: src
+    sonar.tests: src
+    sonar.test.inclusions: "**/*.test.js,**/*.test.jsx"
+    sonar.exclusions: "**/*.test.js,**/*.test.jsx,node_modules/**"
+    sonar.javascript.lcov.reportPaths: coverage/lcov.info
 
-# metrics ที่จะดึงจาก SonarQube
 metrics:
   - bugs
   - vulnerabilities
@@ -43,3 +63,143 @@ metrics:
   - reliability_rating
   - security_rating
   - sqale_rating
+  - cognitive_complexity
+  - complexity
+
+# ด่านตรวจ: รันเรียงลำดับใน Docker (required = ถ้าพังจะข้ามด่านที่เหลือ, always = วิเคราะห์เสมอ)
+checks:
+  - name: install
+    command: npm install --no-audit --no-fund --silent
+    required: true
+    timeout: 900
+  - name: build
+    command: npm run build
+    required: true
+  - name: acceptance
+    command: mkdir -p .results && npx vitest run --config acceptance/vitest.config.js --reporter=default --reporter=json --outputFile.json=.results/acceptance.json
+  - name: own-tests
+    command: npx vitest run --coverage --exclude "acceptance/**"
+  - name: depcruise
+    always: true
+    command: >-
+      mkdir -p .results && npx --yes dependency-cruiser@16 src --no-config
+      --exclude '(node_modules|\.test\.[jt]sx?$)' --output-type json > .results/depcruise.json
+  - name: madge
+    always: true
+    command: >-
+      mkdir -p .results && (npx --yes madge@8 --circular --extensions js,jsx
+      --exclude '\.test\.' --json src > .results/madge.json || true)
+
+# เทสต์ของเราเอง (AI ไม่เห็นตอนสร้าง) จะถูกใส่เข้าโปรเจกต์หลังสร้างเสร็จ
+acceptance_tests:
+  acceptance/vitest.config.js: |
+    import { defineConfig } from "vitest/config";
+    import react from "@vitejs/plugin-react";
+
+    export default defineConfig({
+      plugins: [react()],
+      root: process.cwd(),
+      test: { environment: "jsdom", include: ["acceptance/**/*.test.jsx"] },
+    });
+  acceptance/todo.test.jsx: |
+    // @vitest-environment jsdom
+    import { describe, it, expect, afterEach } from "vitest";
+    import { render, screen, cleanup } from "@testing-library/react";
+    import userEvent from "@testing-library/user-event";
+    import App from "../src/App.jsx";
+
+    afterEach(() => cleanup());
+
+    async function addTodo(user, title) {
+      await user.type(screen.getByTestId("todo-input"), title);
+      await user.click(screen.getByTestId("add-button"));
+    }
+
+    const titles = () => screen.queryAllByTestId("todo-title").map((el) => el.textContent.trim());
+    const toggles = () => screen.getAllByTestId("todo-toggle");
+
+    describe("todo acceptance", () => {
+      it("starts empty with the form visible", () => {
+        render(<App />);
+        expect(screen.getByTestId("todo-input")).toBeTruthy();
+        expect(titles()).toEqual([]);
+        expect(screen.queryByTestId("error-message")).toBeNull();
+        expect(screen.getByTestId("remaining-count").textContent).toMatch(/\b0\b/);
+      });
+
+      it("adds a todo and clears the input", async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await addTodo(user, "Buy milk");
+        expect(titles()).toEqual(["Buy milk"]);
+        expect(screen.getByTestId("todo-input").value).toBe("");
+      });
+
+      it("rejects empty input with an error", async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await user.click(screen.getByTestId("add-button"));
+        expect(await screen.findByTestId("error-message")).toBeTruthy();
+        expect(titles()).toEqual([]);
+      });
+
+      it("rejects whitespace-only input with an error", async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await addTodo(user, "   ");
+        expect(await screen.findByTestId("error-message")).toBeTruthy();
+        expect(titles()).toEqual([]);
+      });
+
+      it("toggles done and updates the remaining count", async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await addTodo(user, "A");
+        await addTodo(user, "B");
+        expect(screen.getByTestId("remaining-count").textContent).toMatch(/\b2\b/);
+        await user.click(toggles()[0]);
+        expect(toggles()[0].checked).toBe(true);
+        expect(screen.getByTestId("remaining-count").textContent).toMatch(/\b1\b/);
+        await user.click(toggles()[0]);
+        expect(toggles()[0].checked).toBe(false);
+        expect(screen.getByTestId("remaining-count").textContent).toMatch(/\b2\b/);
+      });
+
+      it("edits a todo title", async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await addTodo(user, "Old");
+        await user.click(screen.getByTestId("todo-edit"));
+        const input = screen.getByTestId("todo-edit-input");
+        expect(input.value).toBe("Old");
+        await user.clear(input);
+        await user.type(input, "New");
+        await user.click(screen.getByTestId("todo-save"));
+        expect(await screen.findByText("New")).toBeTruthy();
+        expect(titles()).toEqual(["New"]);
+      });
+
+      it("deletes a todo", async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await addTodo(user, "A");
+        await addTodo(user, "B");
+        await user.click(screen.getAllByTestId("todo-delete")[0]);
+        expect(titles()).toEqual(["B"]);
+      });
+
+      it("filters by status", async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await addTodo(user, "A");
+        await addTodo(user, "B");
+        await addTodo(user, "C");
+        await user.click(toggles()[1]);
+        await user.click(screen.getByTestId("filter-active"));
+        expect(titles()).toEqual(["A", "C"]);
+        await user.click(screen.getByTestId("filter-done"));
+        expect(titles()).toEqual(["B"]);
+        await user.click(screen.getByTestId("filter-all"));
+        expect(titles()).toEqual(["A", "B", "C"]);
+      });
+    });
