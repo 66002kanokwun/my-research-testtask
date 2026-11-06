@@ -1,0 +1,47 @@
+# ค่ากลางที่ทุกโปรเจกต์ต้องใช้เหมือนกัน
+sonar:
+  properties:
+    sonar.sources: src
+    sonar.tests: src
+    sonar.test.inclusions: "**/*.test.js,**/*.test.jsx"
+    sonar.exclusions: "**/*.test.js,**/*.test.jsx,node_modules/**,dist/**"
+    sonar.javascript.lcov.reportPaths: coverage/lcov.info
+
+metrics:
+  - bugs
+  - vulnerabilities
+  - code_smells
+  - security_hotspots
+  - coverage
+  - duplicated_lines_density
+  - ncloc
+  - sqale_index
+  - reliability_rating
+  - security_rating
+  - sqale_rating
+  - cognitive_complexity
+  - complexity
+
+# Checks หลักที่ทุกโปรเจกต์ต้องมี (Install, Build, Test, DepCruise, Madge)
+checks:
+  - name: install
+    command: npm install --no-audit --no-fund --silent
+    required: true
+    timeout: 900
+  - name: build
+    command: npm run build
+    required: true
+  - name: acceptance
+    command: mkdir -p .results && npx vitest run --config acceptance/vitest.config.js --reporter=default --reporter=json --outputFile.json=.results/acceptance.json
+  - name: own-tests
+    command: npx vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text --exclude "acceptance/**"
+  - name: depcruise
+    always: true
+    command: >-
+      mkdir -p .results && npx --yes dependency-cruiser@16 src --no-config
+      --exclude '(node_modules|\.test\.[jt]sx?$)' --output-type json > .results/depcruise.json
+  - name: madge
+    always: true
+    command: >-
+      mkdir -p .results && (npx --yes madge@8 --circular --extensions js,jsx
+      --exclude '\.test\.' --json src > .results/madge.json || true)

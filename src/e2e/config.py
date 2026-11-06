@@ -1,29 +1,40 @@
 import os
-from dataclasses import dataclass
 from pathlib import Path
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
+# หา Root Directory ของโปรเจกต์
 ROOT = Path(__file__).resolve().parents[2]
 
+class Settings(BaseSettings):
+    # AI Provider
+    ai_provider: str = "deepseek"
+    ai_model: str = "deepseek-chat"
+    ai_max_tokens: int = 8000
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
 
-@dataclass(frozen=True)
-class Settings:
-    ai_provider: str = os.getenv("AI_PROVIDER", "deepseek")
-    ai_model: str = os.getenv("AI_MODEL", "deepseek-chat")
-    ai_max_tokens: int = int(os.getenv("AI_MAX_TOKENS", "8000"))
-    deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
-    deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    sonar_host_url: str = os.getenv("SONAR_HOST_URL", "http://localhost:9000").rstrip("/")
-    sonar_token: str = os.getenv("SONAR_TOKEN", "")
-    scanner_mode: str = os.getenv("SONAR_SCANNER_MODE", "local")
-    scanner_bin: str = os.getenv("SONAR_SCANNER_BIN", "sonar-scanner")
-    scanner_host_url: str = os.getenv("SONAR_SCANNER_HOST_URL", "http://host.docker.internal:9000")
-    workspaces_dir: Path = ROOT / os.getenv("WORKSPACES_DIR", "workspaces")
-    db_path: Path = ROOT / os.getenv("DB_PATH", "results.db")
+    # SonarQube
+    sonar_host_url: str = "http://localhost:9000"
+    sonar_token: str = ""
+    scanner_mode: str = "docker"
+    scanner_bin: str = "sonar-scanner"
+    scanner_host_url: str = "http://host.docker.internal:9000"
 
+    # Paths
+    workspaces_dir: Path = ROOT / "workspaces"
+    db_path: Path = ROOT / "results.db"
+
+    model_config = SettingsConfigDict(
+        env_file=ROOT / ".env", 
+        env_file_encoding="utf-8", 
+        extra="ignore"
+    )
+
+# Singleton instance
+_settings = None
 
 def get_settings() -> Settings:
-    return Settings()
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings

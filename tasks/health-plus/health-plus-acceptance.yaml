@@ -1,0 +1,74 @@
+acceptance/vitest.config.js: |
+  import { defineConfig } from "vitest/config";
+  import react from "@vitejs/plugin-react";
+
+  export default defineConfig({
+    plugins: [react()],
+    root: process.cwd(),
+    test: { environment: "jsdom", include: ["acceptance/**/*.test.jsx"] },
+  });
+acceptance/health.test.jsx: |
+  // @vitest-environment jsdom
+  import { describe, it, expect, afterEach } from "vitest";
+  import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+  import userEvent from "@testing-library/user-event";
+  import { MemoryRouter } from "react-router-dom";
+  import App from "../src/App.jsx";
+
+  afterEach(() => cleanup());
+
+  describe("Health Plus Acceptance", () => {
+    it("renders the home page with hero and navigation", () => {
+      render(
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
+      );
+      expect(screen.getByTestId("home-hero")).toBeTruthy();
+      expect(screen.getByTestId("navbar-home")).toBeTruthy();
+      expect(screen.getByTestId("navbar-appointments")).toBeTruthy();
+    });
+
+    it("navigates to appointment page when clicking the CTA button", async () => {
+      const user = userEvent.setup();
+      render(
+        <MemoryRouter initialEntries={["/"]}>
+          <App />
+        </MemoryRouter>
+      );
+      
+      await user.click(screen.getByTestId("book-btn"));
+      expect(screen.getByTestId("appointment-form")).toBeTruthy();
+    });
+
+    it("submits an appointment and shows a success toast", async () => {
+      const user = userEvent.setup();
+      render(
+        <MemoryRouter initialEntries={["/appointments"]}>
+          <App />
+        </MemoryRouter>
+      );
+
+      await user.type(screen.getByTestId("input-name"), "John Doe");
+      await user.type(screen.getByTestId("input-email"), "john@example.com");
+      await user.type(screen.getByTestId("input-date"), "2026-12-01");
+      
+      // Select doctor (assuming it's a <select>)
+      await user.selectOptions(screen.getByTestId("input-doctor"), ["Dr. Smith"]);
+      
+      await user.click(screen.getByTestId("submit-appointment"));
+      
+      // Check if toast appears (might need to wait for it)
+      const toast = await screen.findByTestId("toast-success");
+      expect(toast).toBeTruthy();
+    });
+
+    it("renders the virtual consultation section", () => {
+      render(
+        <MemoryRouter initialEntries={["/consultations"]}>
+          <App />
+        </MemoryRouter>
+      );
+      expect(screen.getByTestId("consultation-section")).toBeTruthy();
+    });
+  });

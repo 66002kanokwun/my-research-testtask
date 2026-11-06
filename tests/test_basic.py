@@ -1,8 +1,8 @@
 import pytest
 
-from e2e.models import GeneratedFile, Task
-from e2e.sandbox import safe_join, write_workspace
-from e2e.sonar import project_key
+from e2e.core.models import GeneratedFile, Task
+from e2e.integrations.sandbox import safe_join, write_workspace
+from e2e.integrations.sonar import project_key
 
 
 def test_task_loads():

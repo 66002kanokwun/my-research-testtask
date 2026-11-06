@@ -1,0 +1,7 @@
+id: health-plus
+name: Health Plus (Healthcare App)
+
+# ชี้ขึ้นไป 1 ชั้นเพื่อหา base_react.yaml
+base_config: base_health.yaml
+prompt_file: health-plus-prompt.md
+acceptance_file: health-plus-acceptance.yaml

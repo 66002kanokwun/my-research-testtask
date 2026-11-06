@@ -1,10 +1,8 @@
 import argparse
-
 import uvicorn
 
-from . import storage
-from .pipeline import run_pipeline
-
+from .integrations import storage
+from .core.pipeline import run_pipeline
 
 def main() -> None:
     p = argparse.ArgumentParser(prog="e2e")
@@ -29,8 +27,8 @@ def main() -> None:
         else:
             print(run["error"])
     else:
-        uvicorn.run("e2e.api:app", port=8000)
-
+        # ชี้ไปที่ api.app แทน
+        uvicorn.run("e2e.api.app:app", port=8000)
 
 if __name__ == "__main__":
     main()

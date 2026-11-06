@@ -7,7 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .models import GeneratedFile
+from ..core.models import GeneratedFile
+from ..utils.logger import logger
 
 RESULTS_DIR = ".results"
 CODE_EXT = (".js", ".jsx", ".mjs", ".cjs")
@@ -41,24 +42,45 @@ def inject_acceptance_tests(workspace: Path, tests: dict[str, str]) -> None:
 
 
 def run_checks_in_docker(workspace: Path, image: str, checks: list[dict]) -> list[dict]:
-    """รันด่านตามลำดับ ถ้าด่านที่ required พัง ด่านที่เหลือจะถูกข้าม (ยกเว้นด่านที่มี always)
-    โค้ดจาก AI ไม่ควรรันบนเครื่องตรงๆ จึงรันใน container"""
+    """รันด่านตามลำดับ ถ้าด่านที่ required พัง ด่านที่เหลือจะถูกข้าม (ยกเว้นด่านที่มี always)"""
     results: list[dict] = []
     blocked = False
     for chk in checks:
         if blocked and not chk.get("always"):
             results.append({"name": chk["name"], "status": "skipped", "output": ""})
             continue
+        
         cmd = ["docker", "run", "--rm", "-v", f"{workspace.resolve()}:/work", "-w", "/work",
                image, "sh", "-c", chk["command"]]
+        
+        logger.info(f"\n[Docker] Running check: {chk['name']}")
+        
         try:
-            p = subprocess.run(cmd, capture_output=True, text=True, timeout=int(chk.get("timeout", 600)))
-            ok, out = p.returncode == 0, (p.stdout + p.stderr)[-2000:]
+            # >>> แก้ไข: เพิ่ม encoding="utf-8" และ errors="replace" <<<
+            p = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                encoding="utf-8", 
+                errors="replace", 
+                timeout=int(chk.get("timeout", 600))
+            )
+            
+            # >>> แก้ไข: ป้องกันกรณี stdout/stderr เป็น None <<<
+            stdout = p.stdout or ""
+            stderr = p.stderr or ""
+            ok = p.returncode == 0
+            out = (stdout + stderr)[-2000:]
+            
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             ok, out = False, f"{type(e).__name__}: {e}"
+            
+        logger.info(f"[Docker] Result: {'PASS' if ok else 'FAIL'}")
+        
         results.append({"name": chk["name"], "status": "pass" if ok else "fail", "output": out})
         if not ok and chk.get("required"):
             blocked = True
+            
     return results
 
 

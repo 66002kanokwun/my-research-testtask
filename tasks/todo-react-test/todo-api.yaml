@@ -1,0 +1,6 @@
+id: todo-react
+name: Todo App (React)
+
+base_config: base_todo.yaml
+prompt_file: todo-react-prompt.md
+acceptance_file: todo-react-acceptance.yaml

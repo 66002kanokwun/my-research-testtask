@@ -1,0 +1,27 @@
+base_config: ../base_common.yaml
+
+environment:
+  language: javascript
+  version: "ES2022"
+  frameworks: 
+    - react 18
+    - vite
+    - vitest
+    - "@testing-library/react"
+    - "@testing-library/user-event"
+    - jsdom
+    - react-router-dom
+    - react-toastify
+    - "@fortawesome/react-fontawesome"
+    - "@fortawesome/free-solid-svg-icons"
+  constraints:
+    - JavaScript with JSX only, no TypeScript
+    - Put source in src/ and your own tests next to code as *.test.jsx
+    - package.json must define scripts dev, build and test, and npm install must work without extra flags
+    - devDependencies must include vite, "@vitejs/plugin-react", vitest, "@vitest/coverage-v8", jsdom, "@testing-library/react", "@testing-library/user-event"
+    - Configure vitest inside vite.config.js with environment jsdom, globals true, and coverage provider v8 with reporters lcov and text
+    - Functional components and hooks only, no class components
+    - Use react-router-dom for navigation
+    - Use react-toastify for notifications
+  docker_image: node:20-slim
+
